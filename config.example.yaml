@@ -1,0 +1,47 @@
+# Copy to config.yaml and edit. API keys live in .env / GCP Secret Manager, never here.
+
+starting_capital: 100000        # INR the bot is given at the start
+
+# NSE symbols to watch (no .NS suffix)
+watchlist: [RELIANCE, TCS, HDFCBANK, INFY, ICICIBANK, ITC, LT, SBIN]
+benchmark: "^NSEI"              # Nifty 50, used for comparison in the scorecard
+
+llm:
+  provider: xai                 # xai (Grok) | groq | openrouter | none (rules only)
+  model: grok-4-fast            # any chat model the provider offers
+  temperature: 0.2
+
+risk:
+  max_position_pct: 0.15        # at most 15% of equity in one stock
+  max_open_positions: 6
+  min_cash_reserve_pct: 0.10    # always keep 10% in cash
+  min_confidence: 0.6           # ignore AI ideas below this confidence
+  default_stop_loss_pct: 0.05   # used when the AI gives no stop
+  max_stop_loss_pct: 0.10       # stops wider than this are clipped
+  max_quarter_drawdown_pct: 0.08  # stop opening new trades if the quarter is down 8%
+  max_trades_per_day: 4
+
+survival:
+  # A quarter "fails" if its return is at or below min_quarter_return.
+  min_quarter_return: 0.0
+  # The bot shuts itself down after this many failed quarters in a row.
+  max_consecutive_failed_quarters: 2
+  fiscal_year_start_month: 4    # Indian FY: Q1 = Apr-Jun
+
+# Delivery (CNC) charges. Approximate; check your broker's current rate card.
+costs:
+  brokerage_per_order: 0.0      # Dhan/Zerodha delivery = 0; Upstox charges per order
+  stt_pct: 0.001                # 0.1% on buy and sell
+  exchange_txn_pct: 0.0000297   # NSE
+  sebi_fee_pct: 0.000001        # Rs 10 per crore
+  stamp_duty_buy_pct: 0.00015   # buy side only
+  gst_pct: 0.18                 # on brokerage + exchange + SEBI fees
+  dp_charge_per_sell: 15.93     # per scrip per sell day
+
+broker:
+  mode: paper                   # paper | openalgo
+  openalgo_host: http://127.0.0.1:5000
+  openalgo_strategy: invbot
+
+storage:
+  db_path: invbot.db
