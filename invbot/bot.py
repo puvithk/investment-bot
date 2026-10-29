@@ -8,6 +8,7 @@ from typing import Callable, Protocol
 
 import pandas as pd
 
+from .adaptive import Plan, affordable, apply_plan, make_plan
 from .agents import Analysts, PortfolioManager, Proposal
 from .data.indicators import snapshot
 from .ledger import Ledger, now_iso
@@ -130,10 +131,16 @@ class Bot:
         # 1. stop-losses first, before any new idea
         self._run_stops(prices, ts, actions)
 
-        # 2. analyse each stock and act through the risk rules
+        # 2. size the bot to its money and the market mood
+        risk, plan = self._cycle_risk(prices, notes)
+
+        # 3. analyse each stock and act through the risk rules
+        held_now = self.ledger.positions()
         for s in watch:
             if s not in prices:
                 continue
+            if plan and s not in held_now and not affordable(prices[s], self._equity(prices), plan):
+                continue  # can't buy a sensible amount of it, so don't spend AI calls on it
             try:
                 proposal, snap = self._analyse(s, candles[s])
             except Exception as e:
@@ -146,7 +153,10 @@ class Bot:
                 quarter_start_equity=self._quarter_start_equity(today, equity),
                 trades_today=self.ledger.trades_on(today),
             )
-            verdict = self.risk.review(proposal, prices[s], state)
+            if plan and proposal.action == "BUY":
+                # The AI picks what and when; the plan decides how much.
+                proposal.size_pct = plan.position_pct
+            verdict = risk.review(proposal, prices[s], state)
             self.ledger.log_decision(ts, proposal.to_dict(), verdict.approved, verdict.note, snap)
             if verdict.approved and verdict.order:
                 res = self.broker.place(verdict.order, ts)
@@ -158,6 +168,20 @@ class Bot:
         equity = self._equity(prices)
         self.ledger.record_equity(today, self.broker.cash(), equity)
         return CycleReport(today, True, equity, self.broker.cash(), actions, notes)
+
+    def _cycle_risk(self, prices: dict[str, float], notes: list[str]) -> tuple[RiskManager, Plan | None]:
+        ad = self.cfg.get("adaptive") or {}
+        if not ad.get("enabled"):
+            return self.risk, None
+        try:
+            bench = self.data.candles(self.cfg["benchmark"])
+        except Exception as e:
+            log.warning("no benchmark candles: %s", e)
+            bench = None
+        plan = make_plan(self._equity(prices), bench, self.cfg["risk"], self.cfg["costs"], ad)
+        notes.append("plan: " + plan.describe())
+        self.ledger.set("last_plan", plan.__dict__)
+        return RiskManager(apply_plan(self.cfg["risk"], plan)), plan
 
     def run_stops_only(self) -> CycleReport:
         """Cheap daily check between full decision cycles: stops and equity only."""

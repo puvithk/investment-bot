@@ -14,6 +14,7 @@ fundamentals (P/E, ROE, debt, growth) ───────┘                  
 - **Analysts** (`invbot/agents.py`): technical, news and fundamentals. Each one returns a stance from -1 to +1 and a short reason. They use an AI model when one is configured (Grok, Groq or OpenRouter) and simple rules when none is.
 - **Portfolio manager**: weighs the analysts' views and proposes BUY, SELL or HOLD, with a confidence, a size and a stop-loss.
 - **Risk rules** (`invbot/risk.py`): fixed code that the AI can't override. Defaults: at most 15% of equity in one stock, 6 open positions, 10% kept in cash, a stop-loss on every buy (10% at most), no new buys once the quarter is down 8%, and 4 trades a day.
+- **Adaptive sizing** (`invbot/adaptive.py`): every cycle the bot reads the Nifty trend and its own money, then decides how many positions to hold and how big each one is. In an uptrend it can fill every slot. In a sideways market it fills about half, and in a falling market it opens no new buys. Small accounts (under ₹50k) hold fewer, larger positions. Any trade so small that charges would eat more than 1% is skipped, which is why cheap ETFs like NIFTYBEES are on the watchlist.
 - **Ledger** (`invbot.db`, SQLite): every proposal is saved with the analysts' views, the indicator snapshot and the risk verdict, along with every fill, its charges and the daily equity.
 - **Costs** (`invbot/costs.py`): real delivery charges (STT, stamp duty, exchange, SEBI, GST, DP). Check `config.yaml` against your broker's rate card.
 
