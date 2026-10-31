@@ -75,7 +75,7 @@ def run_backtest_cli(cfg: dict, args) -> None:
     from .data.market import fetch_candles
 
     frames = {s: fetch_candles(s, period="10y") for s in cfg["watchlist"]}
-    bench = fetch_candles(cfg["benchmark"], period="10y")["close"]
+    bench = fetch_candles(cfg["benchmark"], period="10y")
     llm = make_llm(cfg) if args.ai else None
     res = run_backtest(cfg, frames, args.start, args.end, args.every, llm, bench)
     print(json.dumps(res.summary(), indent=2))

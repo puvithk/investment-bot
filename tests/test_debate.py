@@ -13,8 +13,9 @@ from .test_bot import FakeData
 class FakeLLM:
     """Plays every committee role and records what each one was told."""
 
-    def __init__(self, risk_verdict="OK", pm_action="BUY"):
+    def __init__(self, risk_verdict="OK", pm_action="BUY", risk_cap=0.12):
         self.calls = []
+        self.risk_cap = risk_cap
         self.risk_verdict = risk_verdict
         self.pm_action = pm_action
 
@@ -25,7 +26,7 @@ class FakeLLM:
         if "BEAR researcher" in system:
             return {"argument": "RSI stretched, sector weak.", "conviction": 0.6}
         if "RISK OFFICER" in system:
-            return {"assessment": "Acceptable downside.", "max_size_pct": 0.12,
+            return {"assessment": "Acceptable downside.", "max_size_pct": self.risk_cap,
                     "stop_loss_pct": 0.04, "verdict": self.risk_verdict}
         if "PORTFOLIO MANAGER" in system:
             return {"action": self.pm_action, "confidence": 0.75, "size_pct": 0.3,
@@ -86,3 +87,15 @@ def test_bot_logs_full_debate_and_briefs_analysts(cfg):
     debate = json.loads(row[0])["debate"]
     assert debate[-1]["speaker"] == "portfolio_manager" and debate[-1]["winner"] == "bull"
     assert "FY27 Q3" in llm.calls[0][0]                      # analysts got the briefing too
+
+
+def test_adaptive_plan_never_sizes_above_the_risk_officers_cap(cfg):
+    frames = {"TCS": make_candles(start=3000, drift=0.003)}
+    cfg["watchlist"] = list(frames)
+    llm = FakeLLM(risk_cap=0.10)   # the plan alone would size it at 15%
+    ledger = Ledger(":memory:")
+    bot = Bot(cfg, ledger, PaperBroker(ledger, cfg["starting_capital"], cfg["costs"]), FakeData(frames),
+              Analysts(llm), PortfolioManager(llm), clock=lambda: datetime(2026, 10, 31, 16))
+    rep = bot.run_cycle()
+    pos = ledger.positions()["TCS"]
+    assert rep.actions and pos["qty"] * pos["avg_price"] <= 0.10 * cfg["starting_capital"]
