@@ -8,11 +8,12 @@ from typing import Callable, Protocol
 
 import pandas as pd
 
+from .adaptive import Plan, affordable, apply_plan, make_plan
 from .agents import Analysts, PortfolioManager, Proposal
 from .data.indicators import snapshot
 from .ledger import Ledger, now_iso
 from .risk import Order, PortfolioState, RiskManager
-from .scorecard import quarterly_results, survival_check, fiscal_quarter
+from .scorecard import days_left_in_quarter, failed_streak, fiscal_quarter, quarterly_results, survival_check
 
 log = logging.getLogger("invbot")
 
@@ -112,11 +113,9 @@ class Bot:
             return CycleReport(today, False, 0.0, self.broker.cash(), [], [self.ledger.get("shutdown")])
 
         sv = self.cfg["survival"]
-        alive, why = survival_check(
-            quarterly_results(self.ledger.equity_curve(), self.cfg["starting_capital"], today,
-                              sv["fiscal_year_start_month"]),
-            sv["min_quarter_return"], sv["max_consecutive_failed_quarters"],
-        )
+        results = quarterly_results(self.ledger.equity_curve(), self.cfg["starting_capital"], today,
+                                    sv["fiscal_year_start_month"])
+        alive, why = survival_check(results, sv["min_quarter_return"], sv["max_consecutive_failed_quarters"])
         if not alive:
             notes.append(why)
             self._liquidate(ts, "survival rule: " + why, actions)
@@ -130,10 +129,18 @@ class Bot:
         # 1. stop-losses first, before any new idea
         self._run_stops(prices, ts, actions)
 
-        # 2. analyse each stock and act through the risk rules
+        # 2. size the bot to its money and the market mood, and brief the agents on survival
+        risk, plan = self._cycle_risk(prices, notes)
+        self.survival = self._survival_context(today, prices, results)
+        self.analysts.survival = self.survival
+
+        # 3. analyse each stock and act through the risk rules
+        held_now = self.ledger.positions()
         for s in watch:
             if s not in prices:
                 continue
+            if plan and s not in held_now and not affordable(prices[s], self._equity(prices), plan):
+                continue  # can't buy a sensible amount of it, so don't spend AI calls on it
             try:
                 proposal, snap = self._analyse(s, candles[s])
             except Exception as e:
@@ -146,7 +153,10 @@ class Bot:
                 quarter_start_equity=self._quarter_start_equity(today, equity),
                 trades_today=self.ledger.trades_on(today),
             )
-            verdict = self.risk.review(proposal, prices[s], state)
+            if plan and proposal.action == "BUY":
+                # The AI picks what and when; the plan decides how much.
+                proposal.size_pct = plan.position_pct
+            verdict = risk.review(proposal, prices[s], state)
             self.ledger.log_decision(ts, proposal.to_dict(), verdict.approved, verdict.note, snap)
             if verdict.approved and verdict.order:
                 res = self.broker.place(verdict.order, ts)
@@ -158,6 +168,20 @@ class Bot:
         equity = self._equity(prices)
         self.ledger.record_equity(today, self.broker.cash(), equity)
         return CycleReport(today, True, equity, self.broker.cash(), actions, notes)
+
+    def _cycle_risk(self, prices: dict[str, float], notes: list[str]) -> tuple[RiskManager, Plan | None]:
+        ad = self.cfg.get("adaptive") or {}
+        if not ad.get("enabled"):
+            return self.risk, None
+        try:
+            bench = self.data.candles(self.cfg["benchmark"])
+        except Exception as e:
+            log.warning("no benchmark candles: %s", e)
+            bench = None
+        plan = make_plan(self._equity(prices), bench, self.cfg["risk"], self.cfg["costs"], ad)
+        notes.append("plan: " + plan.describe())
+        self.ledger.set("last_plan", plan.__dict__)
+        return RiskManager(apply_plan(self.cfg["risk"], plan)), plan
 
     def run_stops_only(self) -> CycleReport:
         """Cheap daily check between full decision cycles: stops and equity only."""
@@ -187,7 +211,23 @@ class Bot:
             self.analysts.fundamentals(symbol, self.data.fundamentals(symbol)),
         ]
         held = self.ledger.positions().get(symbol)
-        return self.pm.decide(symbol, views, held["qty"] if held else 0, snap), snap
+        survival = getattr(self, "survival", None)
+        return self.pm.decide(symbol, views, held["qty"] if held else 0, snap, survival=survival), snap
+
+    def _survival_context(self, today: date, prices: dict[str, float], results) -> dict:
+        sv = self.cfg["survival"]
+        fy, q = fiscal_quarter(today, sv["fiscal_year_start_month"])
+        equity = self._equity(prices)
+        start = self._quarter_start_equity(today, equity)
+        return {
+            "starting_capital": self.cfg["starting_capital"],
+            "equity": equity,
+            "quarter": f"FY{fy % 100:02d} Q{q}",
+            "quarter_return": equity / start - 1 if start else 0.0,
+            "days_left_in_quarter": days_left_in_quarter(today, sv["fiscal_year_start_month"]),
+            "failed_in_row": failed_streak(results, sv["min_quarter_return"]),
+            "max_failed": sv["max_consecutive_failed_quarters"],
+        }
 
     def _liquidate(self, ts: str, reason: str, actions: list[str]) -> None:
         for s, pos in self.ledger.positions().items():

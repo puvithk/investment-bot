@@ -46,14 +46,25 @@ def quarterly_results(curve: list[tuple[date, float]], starting_capital: float,
     return results
 
 
-def survival_check(results: list[QuarterResult], min_return: float, max_failed: int) -> tuple[bool, str]:
-    """Returns (alive, explanation). Counts failed complete quarters in a row, newest first."""
+def failed_streak(results: list[QuarterResult], min_return: float) -> int:
+    """Failed complete quarters in a row, counting back from the newest."""
     streak = 0
     for r in reversed([r for r in results if r.complete]):
         if r.ret <= min_return:
             streak += 1
         else:
             break
+    return streak
+
+
+def days_left_in_quarter(d: date, fy_start_month: int = 4) -> int:
+    fy, q = fiscal_quarter(d, fy_start_month)
+    return (_quarter_end(fy, q, fy_start_month) - d).days
+
+
+def survival_check(results: list[QuarterResult], min_return: float, max_failed: int) -> tuple[bool, str]:
+    """Returns (alive, explanation)."""
+    streak = failed_streak(results, min_return)
     if streak >= max_failed:
         return False, f"{streak} failed quarters in a row (limit {max_failed}); shutting down"
     return True, f"{streak} failed quarter(s) in a row (limit {max_failed})"

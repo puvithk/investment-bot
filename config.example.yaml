@@ -2,14 +2,24 @@
 
 starting_capital: 100000        # INR the bot is given at the start
 
-# NSE symbols to watch (no .NS suffix)
-watchlist: [RELIANCE, TCS, HDFCBANK, INFY, ICICIBANK, ITC, LT, SBIN]
+# NSE symbols to watch (no .NS suffix). Cheap ETFs let small accounts stay diversified.
+watchlist: [RELIANCE, TCS, HDFCBANK, INFY, ICICIBANK, ITC, LT, SBIN,
+            NIFTYBEES, BANKBEES, JUNIORBEES, ITBEES, GOLDBEES]
 benchmark: "^NSEI"              # Nifty 50, used for comparison in the scorecard
 
 llm:
   provider: xai                 # xai (Grok) | groq | openrouter | none (rules only)
   model: grok-4-fast            # any chat model the provider offers
   temperature: 0.2
+  debate_rounds: 2              # bull vs bear rounds before the risk officer and final ruling
+
+# The bot sizes itself to its money and to the market's mood (Nifty trend).
+# Market up-trend: fully invested. Sideways: half. Falling: no new buys.
+adaptive:
+  enabled: true
+  max_round_trip_cost_pct: 0.01   # skip trades so small that charges exceed 1%
+  small_account_below: 50000      # below this, hold fewer, larger positions
+  max_position_pct_small: 0.45    # cap per position for small accounts
 
 risk:
   max_position_pct: 0.15        # at most 15% of equity in one stock
