@@ -64,10 +64,11 @@ class BacktestResult:
 
 
 def run_backtest(cfg: dict, frames: dict[str, pd.DataFrame], start: str, end: str | None = None,
-                 every: int = 1, llm=None, benchmark: pd.Series | None = None) -> BacktestResult:
+                 every: int = 1, llm=None, benchmark: pd.DataFrame | None = None) -> BacktestResult:
     """`every` = decide every N trading days (stops are still checked daily)."""
     cfg = {**cfg, "watchlist": list(frames)}
-    data = HistoricalData(frames)
+    # The benchmark is visible to the bot (for the market-mood check) but never traded.
+    data = HistoricalData({**frames, cfg["benchmark"]: benchmark} if benchmark is not None else frames)
     ledger = Ledger(":memory:")
     broker = PaperBroker(ledger, cfg["starting_capital"], cfg["costs"])
     clock_now = {"t": datetime.now()}
@@ -94,4 +95,5 @@ def run_backtest(cfg: dict, frames: dict[str, pd.DataFrame], start: str, end: st
     last_day = days[-1].date() if days else datetime.now().date()
     quarters = quarterly_results(curve, cfg["starting_capital"], last_day, sv["fiscal_year_start_month"])
     ok, note = survival_check(quarters, sv["min_quarter_return"], sv["max_consecutive_failed_quarters"])
-    return BacktestResult(equity, benchmark, fills, quarters, alive and ok, ledger.get("shutdown") or note)
+    bench_close = benchmark["close"] if benchmark is not None else None
+    return BacktestResult(equity, bench_close, fills, quarters, alive and ok, ledger.get("shutdown") or note)
