@@ -27,7 +27,8 @@ def build_bot(cfg: dict) -> Bot:
         raise SystemExit(f"Unknown broker mode {mode!r}")
     llm = make_llm(cfg)
     logging.info("LLM: %s", f"{llm.provider}/{llm.model}" if llm else "none (rules only)")
-    return Bot(cfg, ledger, broker, LiveData(), Analysts(llm), PortfolioManager(llm))
+    rounds = (cfg.get("llm") or {}).get("debate_rounds", 2)
+    return Bot(cfg, ledger, broker, LiveData(), Analysts(llm), PortfolioManager(llm, debate_rounds=rounds))
 
 
 def main() -> None:

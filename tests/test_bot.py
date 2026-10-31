@@ -29,7 +29,7 @@ class ScriptedPM(PortfolioManager):
         super().__init__(None)
         self.script = script
 
-    def decide(self, symbol, views, position_qty, snap):
+    def decide(self, symbol, views, position_qty, snap, survival=None):
         action, conf, size, stop = self.script.get(symbol, ("HOLD", 0, 0, None))
         return Proposal(symbol, action, conf, size, stop, "scripted", views)
 

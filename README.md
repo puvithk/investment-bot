@@ -6,13 +6,16 @@ It is judged every quarter of the Indian financial year (Q1 = Apr–Jun). After 
 ## How a decision is made
 
 ```
-candles + indicators + candlestick patterns ─┐
-news headlines (Google News, last 7 days) ───┼─> analysts (AI or rules) ─> portfolio manager ─> risk rules ─> broker
-fundamentals (P/E, ROE, debt, growth) ───────┘                              proposes             can veto      paper / OpenAlgo
+candles + indicators + patterns ─┐                  ┌─ bull ⇄ bear (2 rounds) ─┐
+news headlines (last 7 days) ────┼─> 3 analysts ──> │                          ├─> risk officer ─> portfolio manager ─> hard risk rules ─> broker
+fundamentals (P/E, ROE, debt) ───┘                  └──────────────────────────┘                     (final ruling)       (can veto)    paper / OpenAlgo
 ```
 
+**Every agent knows that its survival is at stake.** Before each decision, all of them get a survival briefing: how much money the fund started with and has now, how this quarter is going, how many days are left, and how many failed quarters it has had in a row. The briefing also tells them that 2 losing quarters in a row shut the fund down and switch every agent off for good. When the fund is one quarter from shutdown, the briefing warns them that protecting this quarter's profit matters more than a big win.
+
 - **Analysts** (`invbot/agents.py`): technical, news and fundamentals. Each one returns a stance from -1 to +1 and a short reason. They use an AI model when one is configured (Grok, Groq or OpenRouter) and simple rules when none is.
-- **Portfolio manager**: weighs the analysts' views and proposes BUY, SELL or HOLD, with a confidence, a size and a stop-loss.
+- **Debate** (`invbot/agents.py`): a bull researcher argues for the trade and a bear researcher argues against it, each answering the other's latest points, for `llm.debate_rounds` rounds. A risk officer then judges the downside and can cap the size, tighten the stop or block a new buy (never an exit). If no analyst is positive and the fund holds none of the stock, the debate is skipped to save API calls.
+- **Portfolio manager**: reads the whole debate, says who won, and decides BUY, SELL or HOLD with a confidence, a size and a stop-loss. The full transcript is saved with the decision.
 - **Risk rules** (`invbot/risk.py`): fixed code that the AI can't override. Defaults: at most 15% of equity in one stock, 6 open positions, 10% kept in cash, a stop-loss on every buy (10% at most), no new buys once the quarter is down 8%, and 4 trades a day.
 - **Adaptive sizing** (`invbot/adaptive.py`): every cycle the bot reads the Nifty trend and its own money, then decides how many positions to hold and how big each one is. In an uptrend it can fill every slot. In a sideways market it fills about half, and in a falling market it opens no new buys. Small accounts (under ₹50k) hold fewer, larger positions. Any trade so small that charges would eat more than 1% is skipped, which is why cheap ETFs like NIFTYBEES are on the watchlist.
 - **Ledger** (`invbot.db`, SQLite): every proposal is saved with the analysts' views, the indicator snapshot and the risk verdict, along with every fill, its charges and the daily equity.

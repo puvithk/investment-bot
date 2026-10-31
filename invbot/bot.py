@@ -13,7 +13,7 @@ from .agents import Analysts, PortfolioManager, Proposal
 from .data.indicators import snapshot
 from .ledger import Ledger, now_iso
 from .risk import Order, PortfolioState, RiskManager
-from .scorecard import quarterly_results, survival_check, fiscal_quarter
+from .scorecard import days_left_in_quarter, failed_streak, fiscal_quarter, quarterly_results, survival_check
 
 log = logging.getLogger("invbot")
 
@@ -113,11 +113,9 @@ class Bot:
             return CycleReport(today, False, 0.0, self.broker.cash(), [], [self.ledger.get("shutdown")])
 
         sv = self.cfg["survival"]
-        alive, why = survival_check(
-            quarterly_results(self.ledger.equity_curve(), self.cfg["starting_capital"], today,
-                              sv["fiscal_year_start_month"]),
-            sv["min_quarter_return"], sv["max_consecutive_failed_quarters"],
-        )
+        results = quarterly_results(self.ledger.equity_curve(), self.cfg["starting_capital"], today,
+                                    sv["fiscal_year_start_month"])
+        alive, why = survival_check(results, sv["min_quarter_return"], sv["max_consecutive_failed_quarters"])
         if not alive:
             notes.append(why)
             self._liquidate(ts, "survival rule: " + why, actions)
@@ -131,8 +129,10 @@ class Bot:
         # 1. stop-losses first, before any new idea
         self._run_stops(prices, ts, actions)
 
-        # 2. size the bot to its money and the market mood
+        # 2. size the bot to its money and the market mood, and brief the agents on survival
         risk, plan = self._cycle_risk(prices, notes)
+        self.survival = self._survival_context(today, prices, results)
+        self.analysts.survival = self.survival
 
         # 3. analyse each stock and act through the risk rules
         held_now = self.ledger.positions()
@@ -211,7 +211,23 @@ class Bot:
             self.analysts.fundamentals(symbol, self.data.fundamentals(symbol)),
         ]
         held = self.ledger.positions().get(symbol)
-        return self.pm.decide(symbol, views, held["qty"] if held else 0, snap), snap
+        survival = getattr(self, "survival", None)
+        return self.pm.decide(symbol, views, held["qty"] if held else 0, snap, survival=survival), snap
+
+    def _survival_context(self, today: date, prices: dict[str, float], results) -> dict:
+        sv = self.cfg["survival"]
+        fy, q = fiscal_quarter(today, sv["fiscal_year_start_month"])
+        equity = self._equity(prices)
+        start = self._quarter_start_equity(today, equity)
+        return {
+            "starting_capital": self.cfg["starting_capital"],
+            "equity": equity,
+            "quarter": f"FY{fy % 100:02d} Q{q}",
+            "quarter_return": equity / start - 1 if start else 0.0,
+            "days_left_in_quarter": days_left_in_quarter(today, sv["fiscal_year_start_month"]),
+            "failed_in_row": failed_streak(results, sv["min_quarter_return"]),
+            "max_failed": sv["max_consecutive_failed_quarters"],
+        }
 
     def _liquidate(self, ts: str, reason: str, actions: list[str]) -> None:
         for s, pos in self.ledger.positions().items():

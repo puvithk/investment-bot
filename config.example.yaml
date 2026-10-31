@@ -11,6 +11,7 @@ llm:
   provider: xai                 # xai (Grok) | groq | openrouter | none (rules only)
   model: grok-4-fast            # any chat model the provider offers
   temperature: 0.2
+  debate_rounds: 2              # bull vs bear rounds before the risk officer and final ruling
 
 # The bot sizes itself to its money and to the market's mood (Nifty trend).
 # Market up-trend: fully invested. Sideways: half. Falling: no new buys.
