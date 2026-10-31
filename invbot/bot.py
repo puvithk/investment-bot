@@ -154,8 +154,13 @@ class Bot:
                 trades_today=self.ledger.trades_on(today),
             )
             if plan and proposal.action == "BUY":
-                # The AI picks what and when; the plan decides how much.
+                # The AI picks what and when; the plan decides how much,
+                # but never more than the risk officer allowed.
                 proposal.size_pct = plan.position_pct
+                cap = next((d.get("max_size_pct") for d in proposal.debate
+                            if d.get("speaker") == "risk_officer"), None)
+                if cap is not None:
+                    proposal.size_pct = min(proposal.size_pct, cap)
             verdict = risk.review(proposal, prices[s], state)
             self.ledger.log_decision(ts, proposal.to_dict(), verdict.approved, verdict.note, snap)
             if verdict.approved and verdict.order:
