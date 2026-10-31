@@ -1,4 +1,4 @@
-"""Thin client for OpenAI-compatible chat APIs (Grok, Groq, OpenRouter)."""
+"""Thin client for OpenAI-compatible chat APIs (Grok, Groq, OpenRouter, Gemini)."""
 from __future__ import annotations
 
 import json
@@ -12,6 +12,7 @@ PROVIDERS = {
     "xai": ("https://api.x.ai/v1", "XAI_API_KEY"),
     "groq": ("https://api.groq.com/openai/v1", "GROQ_API_KEY"),
     "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY"),
 }
 
 

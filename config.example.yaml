@@ -8,7 +8,7 @@ watchlist: [RELIANCE, TCS, HDFCBANK, INFY, ICICIBANK, ITC, LT, SBIN,
 benchmark: "^NSEI"              # Nifty 50, used for comparison in the scorecard
 
 llm:
-  provider: xai                 # xai (Grok) | groq | openrouter | none (rules only)
+  provider: xai                 # xai (Grok) | groq | openrouter | gemini | none (rules only)
   model: grok-4-fast            # any chat model the provider offers
   temperature: 0.2
   debate_rounds: 2              # bull vs bear rounds before the risk officer and final ruling
